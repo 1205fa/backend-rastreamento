@@ -1,18 +1,20 @@
-import React, { useState, useEffect } from 'react';
-import { StyleSheet, Text, View, TextInput, TouchableOpacity, Alert, ActivityIndicator } from 'react-native';
+import React, { useState, useEffect, useRef } from 'react';
+import { StyleSheet, Text, View, TextInput, TouchableOpacity, Alert, ActivityIndicator, SafeAreaView, StatusBar, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
 import * as Location from 'expo-location';
 import { io } from 'socket.io-client';
+import { MaterialIcons, FontAwesome5 } from '@expo/vector-icons'; 
 
-// ✅ LINK DO SERVIDOR NO RENDER (Sem o /atualizar no final)
+// ✅ SEU SERVIDOR NA NUVEM
 const ENDERECO_SERVIDOR = 'https://backend-rastreamento-1.onrender.com'; 
 
 const socket = io(ENDERECO_SERVIDOR);
 
 export default function App() {
-  const [localizacao, setLocalizacao] = useState(null);
-  const [nome, setNome] = useState('');
+  const [nome, setNome] = useState(''); // Começa vazio pra pessoa digitar
   const [rastreando, setRastreando] = useState(false);
-  const [tipoVeiculo, setTipoVeiculo] = useState('carro');
+  const [tipoVeiculo, setTipoVeiculo] = useState('onibus'); 
+  const [pacotes, setPacotes] = useState(0); 
+  const locationSubscription = useRef(null);
 
   useEffect(() => {
     pedirPermissao();
@@ -21,108 +23,184 @@ export default function App() {
   const pedirPermissao = async () => {
     let { status } = await Location.requestForegroundPermissionsAsync();
     if (status !== 'granted') {
-      Alert.alert('Permissão negada', 'Precisamos do GPS para funcionar!');
-      return;
+      Alert.alert('Erro', 'Precisamos do GPS para rastrear!');
     }
   };
 
   const iniciarRastreamento = async () => {
     if (nome.trim() === '') {
-      Alert.alert('Atenção', 'Digite seu nome para começar!');
-      return;
+        Alert.alert('Atenção', 'Por favor, digite seu nome ou placa!');
+        return;
     }
 
     setRastreando(true);
+    setPacotes(0); 
 
-    await Location.watchPositionAsync({
-      accuracy: Location.Accuracy.High,
-      timeInterval: 2000,
-      distanceInterval: 5
+    locationSubscription.current = await Location.watchPositionAsync({
+      accuracy: Location.Accuracy.BestForNavigation,
+      timeInterval: 2000, 
+      distanceInterval: 2 
     }, (location) => {
       
+      setPacotes(prev => prev + 1);
+
       const dados = {
-        usuario: nome,
+        usuario: nome, // Manda o nome que você digitou
         latitude: location.coords.latitude,
         longitude: location.coords.longitude,
         tipo: tipoVeiculo
       };
 
-      setLocalizacao(location.coords);
       socket.emit('enviarLocalizacao', dados);
     });
   };
 
+  const pararRastreamento = () => {
+    if (locationSubscription.current) {
+      locationSubscription.current.remove();
+    }
+    setRastreando(false);
+  };
+
   return (
-    <View style={styles.container}>
-      {/* ⚠️ SE ESTIVER ESCRITO "RASTREAMENTO 2.0", ESTÁ CERTO! */}
-      <Text style={styles.titulo}>Rastreamento 2.0</Text>
-      <Text style={styles.subtitulo}>AgendaSegura</Text>
-
-      <View style={styles.inputBox}>
-        <Text style={styles.label}>Seu Nome (Identificação):</Text>
-        <TextInput 
-          style={styles.input}
-          placeholder="Ex: Fabricio"
-          placeholderTextColor="#666"
-          value={nome}
-          onChangeText={setNome}
-          editable={!rastreando}
-        />
-      </View>
-
-      <Text style={styles.label}>Tipo de Veículo:</Text>
-      <View style={styles.botoesContainer}>
-        <TouchableOpacity 
-          style={[styles.botaoTipo, tipoVeiculo === 'moto' && styles.botaoAtivo]} 
-          onPress={() => setTipoVeiculo('moto')}>
-          <Text style={styles.textoBotao}>🏍️ Moto</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity 
-          style={[styles.botaoTipo, tipoVeiculo === 'carro' && styles.botaoAtivo]} 
-          onPress={() => setTipoVeiculo('carro')}>
-          <Text style={styles.textoBotao}>🚗 Carro</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity 
-          style={[styles.botaoTipo, tipoVeiculo === 'onibus' && styles.botaoAtivo]} 
-          onPress={() => setTipoVeiculo('onibus')}>
-          <Text style={styles.textoBotao}>🚌 Ônibus</Text>
-        </TouchableOpacity>
-      </View>
-
-      {!rastreando ? (
-        <TouchableOpacity style={styles.botaoIniciar} onPress={iniciarRastreamento}>
-          <Text style={styles.textoIniciar}>INICIAR RASTREAMENTO</Text>
-        </TouchableOpacity>
-      ) : (
-        <View style={styles.statusBox}>
-          <ActivityIndicator size="large" color="#00ffcc" />
-          <Text style={styles.statusTexto}>Enviando localização de:</Text>
-          <Text style={styles.statusNome}>{nome}</Text>
+    <SafeAreaView style={styles.container}>
+      <StatusBar barStyle="light-content" backgroundColor="#121212" />
+      
+      {/* ScrollView permite rolar a tela se o teclado cobrir algo */}
+      <ScrollView contentContainerStyle={{flexGrow: 1}}>
+        
+        {/* CABEÇALHO */}
+        <View style={styles.header}>
+          <View>
+            <Text style={styles.titulo}>Rastreamento</Text>
+            <Text style={styles.subtitulo}>Sistema VIP</Text>
+          </View>
+          <FontAwesome5 name="satellite-dish" size={30} color="#00ffcc" />
         </View>
-      )}
 
-      <Text style={styles.footer}>Versão 2.0 - Neon Edition</Text>
-    </View>
+        {/* 1. CAMPO DE NOME (O QUE FALTOU!) */}
+        <View style={styles.inputContainer}>
+            <Text style={styles.label}>Quem está dirigindo?</Text>
+            <TextInput
+                style={styles.input}
+                placeholder="Ex: Fabricio, Motorista 01, Placa ABC"
+                placeholderTextColor="#666"
+                value={nome}
+                onChangeText={setNome}
+                editable={!rastreando} // Trava o nome quando começa a rastrear
+            />
+        </View>
+
+        {/* 2. BOTÕES DE VEÍCULO */}
+        <Text style={styles.label}>Selecione seu Veículo:</Text>
+        <View style={styles.gridVeiculos}>
+          {['moto', 'carro', 'onibus'].map((v) => (
+            <TouchableOpacity 
+              key={v}
+              onPress={() => !rastreando && setTipoVeiculo(v)} 
+              style={[
+                styles.botaoVeiculo, 
+                tipoVeiculo === v ? styles.botaoAtivo : styles.botaoInativo
+              ]}>
+              <FontAwesome5 
+                name={v === 'moto' ? 'motorcycle' : v === 'carro' ? 'car' : 'bus'} 
+                size={24} 
+                color={tipoVeiculo === v ? '#000' : '#fff'} 
+              />
+              <Text style={[
+                styles.textoVeiculo, 
+                { color: tipoVeiculo === v ? '#000' : '#fff' }
+              ]}>
+                {v.toUpperCase()}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+
+        {/* 3. ÁREA DE STATUS */}
+        <View style={[styles.card, rastreando ? styles.bordaVerde : styles.bordaCinza]}>
+          <Text style={styles.cardTitulo}>STATUS DA CONEXÃO</Text>
+          
+          {rastreando ? (
+            <View>
+              <View style={styles.row}>
+                <ActivityIndicator size="small" color="#00ffcc" style={{marginRight: 10}} />
+                <Text style={styles.statusOn}>ONLINE</Text>
+              </View>
+              <Text style={styles.infoTexto}>Rastreando: <Text style={{fontWeight:'bold', color:'white'}}>{nome}</Text></Text>
+              
+              <View style={styles.contadorBox}>
+                <Text style={styles.contadorLabel}>PACOTES ENVIADOS</Text>
+                <Text style={styles.contadorNumero}>{pacotes}</Text>
+              </View>
+            </View>
+          ) : (
+            <View style={styles.row}>
+              <MaterialIcons name="portable-wifi-off" size={24} color="#ff4444" style={{marginRight: 10}} />
+              <Text style={styles.statusOff}>OFFLINE</Text>
+            </View>
+          )}
+        </View>
+
+        {/* 4. BOTÃO GIGANTE DE AÇÃO */}
+        <View style={styles.footer}>
+          {!rastreando ? (
+            <TouchableOpacity style={styles.botaoIniciar} onPress={iniciarRastreamento}>
+              <Text style={styles.textoBotao}>INICIAR</Text>
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity style={styles.botaoParar} onPress={pararRastreamento}>
+              <Text style={styles.textoBotao}>PARAR</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#121212', alignItems: 'center', justifyContent: 'center', padding: 20 },
+  container: { flex: 1, backgroundColor: '#121212', padding: 20 },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 30, marginBottom: 20 },
   titulo: { fontSize: 28, color: '#fff', fontWeight: 'bold' },
-  subtitulo: { fontSize: 18, color: '#00ffcc', marginBottom: 30 },
-  inputBox: { width: '100%', marginBottom: 20 },
-  label: { color: '#ccc', marginBottom: 5, fontSize: 16 },
-  input: { backgroundColor: '#333', color: '#fff', padding: 15, borderRadius: 8, fontSize: 18, borderWidth: 1, borderColor: '#555' },
-  botoesContainer: { flexDirection: 'row', justifyContent: 'space-between', width: '100%', marginBottom: 30 },
-  botaoTipo: { backgroundColor: '#333', padding: 10, borderRadius: 8, width: '30%', alignItems: 'center', borderWidth: 1, borderColor: '#555' },
+  subtitulo: { fontSize: 14, color: '#00ffcc' },
+  label: { color: '#aaa', marginBottom: 10, fontSize: 16 },
+  
+  // Estilo do Input Novo
+  inputContainer: { marginBottom: 20 },
+  input: { 
+      backgroundColor: '#1e1e1e', 
+      color: 'white', 
+      padding: 15, 
+      borderRadius: 10, 
+      borderWidth: 1, 
+      borderColor: '#333',
+      fontSize: 16
+  },
+
+  gridVeiculos: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 30 },
+  botaoVeiculo: { width: '30%', padding: 15, borderRadius: 12, alignItems: 'center', borderWidth: 1 },
   botaoAtivo: { backgroundColor: '#00ffcc', borderColor: '#00ffcc' },
-  textoBotao: { fontSize: 16, fontWeight: 'bold' },
-  botaoIniciar: { backgroundColor: '#00ffcc', padding: 20, borderRadius: 12, width: '100%', alignItems: 'center', shadowColor: '#00ffcc', shadowOpacity: 0.5, shadowRadius: 10, elevation: 5 },
-  textoIniciar: { color: '#000', fontSize: 18, fontWeight: 'bold' },
-  statusBox: { alignItems: 'center', marginTop: 20 },
-  statusTexto: { color: '#fff', marginTop: 10 },
-  statusNome: { color: '#00ffcc', fontSize: 24, fontWeight: 'bold' },
-  footer: { position: 'absolute', bottom: 20, color: '#555' }
+  botaoInativo: { backgroundColor: '#2a2a2a', borderColor: '#444' },
+  textoVeiculo: { marginTop: 5, fontWeight: 'bold', fontSize: 12 },
+
+  card: { backgroundColor: '#1e1e1e', padding: 20, borderRadius: 15, marginBottom: 20, borderLeftWidth: 5 },
+  bordaVerde: { borderLeftColor: '#00ffcc' },
+  bordaCinza: { borderLeftColor: '#444' },
+  cardTitulo: { color: '#666', fontSize: 12, fontWeight: 'bold', marginBottom: 10 },
+  
+  row: { flexDirection: 'row', alignItems: 'center', marginBottom: 10 },
+  statusOn: { color: '#00ffcc', fontSize: 20, fontWeight: 'bold' },
+  statusOff: { color: '#ff4444', fontSize: 20, fontWeight: 'bold' },
+  infoTexto: { color: '#ccc', marginBottom: 15 },
+
+  contadorBox: { backgroundColor: '#000', padding: 15, borderRadius: 10, alignItems: 'center', marginTop: 10 },
+  contadorLabel: { color: '#00ffcc', fontSize: 12 },
+  contadorNumero: { color: '#fff', fontSize: 32, fontWeight: 'bold' },
+
+  footer: { marginTop: 10, marginBottom: 20 },
+  botaoIniciar: { backgroundColor: '#00cc44', padding: 20, borderRadius: 12, alignItems: 'center', shadowColor: '#00cc44', elevation: 10 },
+  botaoParar: { backgroundColor: '#cc0000', padding: 20, borderRadius: 12, alignItems: 'center' },
+  textoBotao: { color: '#fff', fontWeight: 'bold', fontSize: 18 }
 });

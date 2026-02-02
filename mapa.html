@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Rastreamento VIP</title>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    
+    <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@latest/dist/leaflet-routing-machine.css" />
+    <script src="https://unpkg.com/leaflet-routing-machine@latest/dist/leaflet-routing-machine.js"></script>
+    
+    <script src="/socket.io/socket.io.js"></script>
+
+    <style>
+        body { margin: 0; padding: 0; font-family: 'Arial', sans-serif; }
+        #map { height: 100vh; width: 100%; }
+        
+        /* CAIXA DE INFORMAÇÃO (ESTILO UBER) */
+        #info-box {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 90%;
+            background: white;
+            padding: 15px;
+            border-radius: 12px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+            z-index: 9999;
+            display: none; /* Escondido até ter rota */
+            text-align: center;
+        }
+        .tempo { font-size: 22px; font-weight: bold; color: #000; display: block; }
+        .distancia { font-size: 14px; color: #666; margin-top: 4px; display: block; }
+        
+        /* Esconder instruções de texto padrão do mapa */
+        .leaflet-routing-container { display: none !important; }
+    </style>
+</head>
+<body>
+
+    <div id="info-box">
+        <span id="tempo-chegada" class="tempo">Calculando...</span>
+        <span id="distancia-chegada" class="distancia">-- km</span>
+    </div>
+
+    <div id="map"></div>
+
+    <script>
+        // 1. CONFIGURAÇÃO DO MAPA (GOOGLE STREETS - CLARO)
+        // lyrs=m significa Mapas de Rua (o que você quer)
+        // lyrs=s seria Satélite (o que estava antes)
+        var map = L.map('map', { zoomControl: false }).setView([-15.7975, -47.8919], 15);
+        
+        L.tileLayer('http://{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}', {
+            maxZoom: 20,
+            subdomains: ['mt0', 'mt1', 'mt2', 'mt3']
+        }).addTo(map);
+
+        // 2. ÍCONES PERSONALIZADOS
+        var iconCarro = L.icon({
+            iconUrl: 'https://cdn-icons-png.flaticon.com/512/3097/3097180.png', // Carrinho
+            iconSize: [40, 40],
+            iconAnchor: [20, 20]
+        });
+
+        var iconUsuario = L.divIcon({
+            className: 'custom-icon',
+            html: '<div style="background-color:#4285F4; width:16px; height:16px; border:3px solid white; border-radius:50%; box-shadow:0 0 5px rgba(0,0,0,0.3);"></div>',
+            iconSize: [20, 20],
+            iconAnchor: [10, 10]
+        });
+
+        // Variáveis de controle
+        var socket = io();
+        var userMarker = null;
+        var driverMarker = null;
+        var routeControl = null;
+        var userPos = null;
+        var driverPos = null;
+
+        // LOCALIZAÇÃO DO USUÁRIO (BOLINHA AZUL)
+        map.locate({watch: true, enableHighAccuracy: true});
+        
+        map.on('locationfound', function(e) {
+            userPos = e.latlng;
+            if (!userMarker) {
+                userMarker = L.marker(e.latlng, {icon: iconUsuario}).addTo(map);
+            } else {
+                userMarker.setLatLng(e.latlng);
+            }
+            atualizarRota();
+        });
+
+        // LOCALIZAÇÃO DO MOTORISTA (VIA SOCKET)
+        socket.on('atualizacao', (dados) => {
+            // Supondo que 'dados' venha como { latitude: ..., longitude: ... }
+            // Se vier como lista de usuários, ajuste conforme seu backend
+            // Aqui assumimos que chega a posição do motorista
+            
+            // Verificação simples se é objeto direto ou lista
+            var lat, lng;
+            if(dados.latitude) {
+                lat = dados.latitude;
+                lng = dados.longitude;
+            } else {
+                // Se for lista, pega o primeiro (ajuste se necessário)
+                var chaves = Object.keys(dados);
+                if(chaves.length > 0) {
+                    lat = dados[chaves[0]].latitude;
+                    lng = dados[chaves[0]].longitude;
+                }
+            }
+
+            if(lat && lng) {
+                driverPos = L.latLng(lat, lng);
+                
+                if (!driverMarker) {
+                    driverMarker = L.marker(driverPos, {icon: iconCarro}).addTo(map);
+                } else {
+                    driverMarker.setLatLng(driverPos);
+                }
+                atualizarRota();
+            }
+        });
+
+        // 3. FUNÇÃO DE ROTA (LINHA VERDE GROSSA)
+        function atualizarRota() {
+            if (userPos && driverPos) {
+                document.getElementById('info-box').style.display = 'block';
+
+                if (routeControl) {
+                    routeControl.setWaypoints([driverPos, userPos]);
+                } else {
+                    routeControl = L.Routing.control({
+                        waypoints: [driverPos, userPos],
+                        show: false, // Esconde painel de texto
+                        createMarker: function() { return null; }, // Não cria marcadores extras
+                        lineOptions: {
+                            styles: [{color: '#24C949', opacity: 1, weight: 7}] // COR VERDE UBER
+                        },
+                        addWaypoints: false,
+                        draggableWaypoints: false,
+                        fitSelectedRoutes: true
+                    }).addTo(map);
+                    
+                    // Atualizar tempo e distância na caixinha
+                    routeControl.on('routesfound', function(e) {
+                        var routes = e.routes;
+                        var summary = routes[0].summary;
+                        var minutos = Math.round(summary.totalTime / 60);
+                        var km = (summary.totalDistance / 1000).toFixed(1);
+                        
+                        document.getElementById('tempo-chegada').innerText = minutos + " min";
+                        document.getElementById('distancia-chegada').innerText = km + " km • Chegando";
+                    });
+                }
+            }
+        }
+    </script>
+</body>
+</html>
