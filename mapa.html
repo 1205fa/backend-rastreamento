@@ -1,14 +1,13 @@
 <!DOCTYPE html>
 <html lang="pt-br">
 <head>
-    <title>Monitoramento VIP - Em Tempo Real</title>
+    <title>Monitoramento VIP</title>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
-    
     <script src="https://unpkg.com/esri-leaflet@3.0.10/dist/esri-leaflet.js"></script>
     <script src="https://unpkg.com/esri-leaflet-geocoder@3.1.4/dist/esri-leaflet-geocoder.js"></script>
     <link rel="stylesheet" href="https://unpkg.com/esri-leaflet-geocoder@3.1.4/dist/esri-leaflet-geocoder.css" />
@@ -17,99 +16,100 @@
         body { margin: 0; padding: 0; font-family: 'Arial', sans-serif; background: #121212; }
         #map { height: 100vh; width: 100%; }
         
-        /* Painel Superior Profissional */
         #info-box { 
             position: absolute; top: 20px; left: 50%; transform: translateX(-50%); 
-            width: 90%; max-width: 400px; background: rgba(0, 0, 0, 0.9); 
+            width: 90%; max-width: 400px; background: rgba(0, 0, 0, 0.95); 
             color: white; padding: 15px; border-radius: 15px; z-index: 9999; 
             text-align: center; border: 2px solid #00ffcc; box-shadow: 0 10px 30px rgba(0,0,0,0.8); 
         }
         
         .tempo { font-size: 18px; font-weight: bold; color: #00ffcc; display: block; margin-bottom: 5px; }
-        .endereco { font-size: 14px; color: #ccc; display: block; height: 20px; overflow: hidden; }
+        .endereco { font-size: 14px; color: #ccc; }
         .veiculo-nome { 
             font-size: 22px; color: #FFD700; margin-top: 10px; font-weight: 900; 
             text-transform: uppercase; border-top: 1px solid #333; padding-top: 10px; 
         }
 
-        /* Efeito de onda pulsante ao redor do ícone */
-        .pulse-icon {
-            background: rgba(0, 255, 204, 0.3);
+        /* ESTILO DO PULSO (ONDA VERDE) */
+        .pulse-container {
+            width: 20px;
+            height: 20px;
+            background: rgba(0, 255, 204, 0.6);
             border-radius: 50%;
-            box-shadow: 0 0 0 rgba(0, 255, 204, 0.4);
+            position: absolute;
             animation: pulse-animation 2s infinite;
         }
 
         @keyframes pulse-animation {
-            0% { box-shadow: 0 0 0 0 rgba(0, 255, 204, 0.7); }
-            70% { box-shadow: 0 0 0 20px rgba(0, 255, 204, 0); }
-            100% { box-shadow: 0 0 0 0 rgba(0, 255, 204, 0); }
+            0% { transform: scale(1); opacity: 1; }
+            100% { transform: scale(4); opacity: 0; }
         }
     </style>
 </head>
 <body>
     <div id="info-box">
-        <span id="status-texto" class="tempo">AGUARDANDO CONEXÃO...</span>
-        <span id="rua-texto" class="endereco">Iniciando GPS...</span>
-        <div id="nome-texto" class="veiculo-nome">DISPONÍVEL</div>
+        <span id="tempo-chegada" class="tempo">SISTEMA ONLINE</span>
+        <span id="distancia-chegada" class="distancia">Aguardando motorista...</span>
+        <div id="nome-motorista" class="veiculo-nome">DISPONÍVEL</div>
     </div>
     <div id="map"></div>
 
     <script>
-        // Inicializa o mapa com ruas (focado inicialmente em Brasília)
+        // Inicializa o mapa focado em Brasília (padrão)
         var map = L.map('map', { zoomControl: false }).setView([-15.7975, -47.8919], 15);
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
-        // Ícones Oficiais do Sistema
         var icones = {
-            'carro': L.icon({ iconUrl: 'https://cdn-icons-png.flaticon.com/512/3082/3082349.png', iconSize: [45, 45], iconAnchor: [22, 22], className: 'pulse-icon' }),
-            'moto': L.icon({ iconUrl: 'https://cdn-icons-png.flaticon.com/512/3448/3448650.png', iconSize: [40, 40], iconAnchor: [20, 20], className: 'pulse-icon' }),
-            'onibus': L.icon({ iconUrl: 'https://cdn-icons-png.flaticon.com/512/2892/2892842.png', iconSize: [50, 50], iconAnchor: [25, 25], className: 'pulse-icon' })
+            'carro': L.icon({ iconUrl: 'https://cdn-icons-png.flaticon.com/512/3082/3082349.png', iconSize: [40, 40], iconAnchor: [20, 20] }),
+            'moto': L.icon({ iconUrl: 'https://cdn-icons-png.flaticon.com/512/3448/3448650.png', iconSize: [40, 40], iconAnchor: [20, 20] }),
+            'onibus': L.icon({ iconUrl: 'https://cdn-icons-png.flaticon.com/512/2892/2892842.png', iconSize: [50, 50], iconAnchor: [25, 25] })
         };
 
-        // Conecta ao seu servidor no Render
         var socket = io('https://backend-rastreamento-1.onrender.com');
         var markers = {}; 
+        var pulses = {}; // Para guardar o efeito de onda
         var geocodeService = L.esri.Geocoding.geocodeService();
 
         socket.on('frota_atualizada', (frota) => {
             Object.keys(frota).forEach(id => {
-                var d = frota[id];
-                var pos = [d.lat, d.lng];
+                var info = frota[id];
+                var pos = [info.lat, info.lng];
                 
-                // Se já existe no mapa, apenas move. Se não, cria com o ícone certo
-                if (markers[id]) {
-                    markers[id].setLatLng(pos);
-                    // Garante que o ícone mude se o motorista trocar de veículo
-                    markers[id].setIcon(icones[d.veiculo] || icones['carro']);
+                if (!markers[id]) {
+                    // Cria o marcador do veículo
+                    markers[id] = L.marker(pos, {icon: icones[info.veiculo || 'onibus']}).addTo(map);
+                    
+                    // Cria o efeito de pulso (onda) embaixo do marcador
+                    pulses[id] = L.marker(pos, {
+                        icon: L.divIcon({
+                            className: 'pulse-container',
+                            iconSize: [20, 20]
+                        })
+                    }).addTo(map);
+                    
                 } else {
-                    markers[id] = L.marker(pos, { icon: icones[d.veiculo] || icones['carro'] }).addTo(map);
+                    markers[id].setLatLng(pos);
+                    pulses[id].setLatLng(pos); // Move a onda junto com o carro
+                    markers[id].setIcon(icones[info.veiculo || 'onibus']);
                 }
 
-                // Atualiza o painel superior com os dados REAIS do motorista
-                document.getElementById('nome-texto').innerText = d.usuario.toUpperCase();
-                document.getElementById('status-texto').innerText = "📍 MOTORISTA EM MOVIMENTO";
+                document.getElementById('nome-motorista').innerText = info.usuario.toUpperCase();
+                document.getElementById('tempo-chegada').innerText = "📍 EM MOVIMENTO";
 
-                // Busca o nome da rua onde o veículo está agora
+                // Atualiza o endereço da rua
                 geocodeService.reverse().latlng(pos).run(function (error, result) {
-                    if (!error) {
-                        document.getElementById('rua-texto').innerText = result.address.Match_addr;
-                    }
+                    if (!error) document.getElementById('distancia-chegada').innerText = result.address.Match_addr;
                 });
             });
 
-            // LIMPEZA: Remove quem ficou offline
+            // Limpa o mapa se alguém desconectar
             Object.keys(markers).forEach(id => {
-                if (!frota[id]) {
-                    map.removeLayer(markers[id]);
+                if (!frota[id]) { 
+                    map.removeLayer(markers[id]); 
+                    map.removeLayer(pulses[id]);
                     delete markers[id];
-                    
-                    // Reseta o painel se não houver ninguém
-                    if (Object.keys(markers).length === 0) {
-                        document.getElementById('nome-texto').innerText = "DISPONÍVEL";
-                        document.getElementById('status-texto').innerText = "AGUARDANDO CONEXÃO...";
-                        document.getElementById('rua-texto').innerText = "GPS em espera";
-                    }
+                    delete pulses[id];
+                    document.getElementById('nome-motorista').innerText = "DISPONÍVEL";
                 }
             });
         });
