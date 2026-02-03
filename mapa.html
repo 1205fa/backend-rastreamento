@@ -4,32 +4,27 @@
     <title>Rastreamento VIP</title>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
-    
+    <script src="/socket.io/socket.io.js"></script>
     <script src="https://unpkg.com/esri-leaflet@3.0.10/dist/esri-leaflet.js"></script>
     <script src="https://unpkg.com/esri-leaflet-geocoder@3.1.4/dist/esri-leaflet-geocoder.js"></script>
     <link rel="stylesheet" href="https://unpkg.com/esri-leaflet-geocoder@3.1.4/dist/esri-leaflet-geocoder.css" />
-
     <style>
         body { margin: 0; padding: 0; font-family: 'Arial', sans-serif; background: #222; }
         #map { height: 100vh; width: 100%; }
-        #info-box { position: absolute; top: 20px; left: 50%; transform: translateX(-50%); width: 90%; max-width: 400px; background: rgba(0, 0, 0, 0.95); color: white; padding: 15px; border-radius: 15px; z-index: 9999; text-align: center; border: 2px solid #00ffcc; box-shadow: 0 10px 30px rgba(0,0,0,0.8); }
-        .tempo { font-size: 20px; font-weight: bold; color: #4DFF88; display: block; margin-bottom: 5px; }
-        .distancia { font-size: 14px; color: #ccc; }
+        #info-box { position: absolute; top: 20px; left: 50%; transform: translateX(-50%); width: 90%; max-width: 400px; background: rgba(0, 0, 0, 0.95); color: white; padding: 15px; border-radius: 15px; z-index: 9999; text-align: center; border: 2px solid #00ffcc; }
+        .tempo { font-size: 20px; font-weight: bold; color: #4DFF88; display: block; }
         .veiculo-nome { font-size: 22px; color: #FFD700; margin-top: 10px; font-weight: 900; text-transform: uppercase; border-top: 1px solid #555; padding-top: 10px; }
     </style>
 </head>
 <body>
     <div id="info-box">
         <span id="tempo-chegada" class="tempo">SISTEMA ONLINE</span>
-        <span id="distancia-chegada" class="distancia">Aguardando motorista...</span>
-        <div id="nome-motorista" class="veiculo-nome">...</div>
+        <span id="distancia-chegada" class="distancia">Aguardando endereço...</span>
+        <div id="nome-motorista" class="veiculo-nome">AGUARDANDO...</div>
     </div>
     <div id="map"></div>
-
     <script>
         var map = L.map('map', { zoomControl: false }).setView([-15.7975, -47.8919], 15);
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
@@ -40,52 +35,32 @@
             'onibus': L.icon({ iconUrl: 'https://cdn-icons-png.flaticon.com/512/2892/2892842.png', iconSize: [50, 50], iconAnchor: [25, 25] })
         };
 
-        var iconUsuario = L.divIcon({
-            className: 'custom-icon',
-            html: '<div style="background-color:#2F80ED; width:15px; height:15px; border:3px solid white; border-radius:50%; box-shadow: 0 0 10px #2F80ED;"></div>',
-            iconSize: [15, 15]
-        });
-
-        var socket = io('https://backend-rastreamento-1.onrender.com');
+        var socket = io(); // Conecta automaticamente ao mesmo servidor
         var markers = {}; 
         var geocodeService = L.esri.Geocoding.geocodeService();
-
-        map.locate({setView: true, maxZoom: 16, watch: true, enableHighAccuracy: true});
-        map.on('locationfound', function(e) {
-            if (!markers['me']) markers['me'] = L.marker(e.latlng, {icon: iconUsuario}).addTo(map);
-            else markers['me'].setLatLng(e.latlng);
-        });
 
         socket.on('frota_atualizada', (frota) => {
             Object.keys(frota).forEach(id => {
                 var info = frota[id];
                 var pos = [info.lat, info.lng];
-                var nome = info.usuario || "Motorista";
-                var tipo = info.veiculo || 'onibus';
                 
                 if (!markers[id]) {
-                    markers[id] = L.marker(pos, {icon: icones[tipo]}).addTo(map);
+                    markers[id] = L.marker(pos, {icon: icones[info.veiculo || 'onibus']}).addTo(map);
                 } else {
                     markers[id].setLatLng(pos);
-                    markers[id].setIcon(icones[tipo]);
+                    markers[id].setIcon(icones[info.veiculo || 'onibus']);
                 }
 
-                document.getElementById('nome-motorista').innerText = nome.toUpperCase();
+                document.getElementById('nome-motorista').innerText = info.usuario.toUpperCase();
 
-                // MOSTRA O ENDEREÇO DA RUA ONDE O ÔNIBUS ESTÁ
                 geocodeService.reverse().latlng(pos).run(function (error, result) {
-                    if (!error) {
-                        document.getElementById('distancia-chegada').innerText = result.address.Match_addr;
-                    }
+                    if (!error) document.getElementById('distancia-chegada').innerText = result.address.Match_addr;
                 });
             });
 
-            // Limpeza automática ao desligar
+            // Remove quem saiu
             Object.keys(markers).forEach(id => {
-                if (id !== 'me' && !frota[id]) {
-                    map.removeLayer(markers[id]);
-                    delete markers[id];
-                }
+                if (!frota[id]) { map.removeLayer(markers[id]); delete markers[id]; }
             });
         });
     </script>
