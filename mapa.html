@@ -26,7 +26,11 @@
     <script>
         var map = L.map('map', { zoomControl: false }).setView([-15.7975, -47.8919], 15);
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
-        var iconOnibus = L.icon({ iconUrl: 'https://cdn-icons-png.flaticon.com/512/2892/2892842.png', iconSize: [50, 50], iconAnchor: [25, 25] });
+        var iconOnibus = L.icon({ 
+            iconUrl: 'https://cdn-icons-png.flaticon.com/512/2892/2892842.png', 
+            iconSize: [50, 50], 
+            iconAnchor: [25, 25] 
+        });
         var socket = io(); 
         var markers = {};
         var geocodeService = L.esri.Geocoding.geocodeService();
