@@ -7,10 +7,11 @@
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
-    <!-- Bibliotecas de Endereço Corrigidas -->
+    
     <script src="https://unpkg.com/esri-leaflet@3.0.10/dist/esri-leaflet.js"></script>
-    <script src="https://unpkg.com"></script>
-    <link rel="stylesheet" href="https://unpkg.com" />
+    <script src="https://unpkg.com/esri-leaflet-geocoder@3.1.4/dist/esri-leaflet-geocoder.js"></script>
+    <link rel="stylesheet" href="https://unpkg.com/esri-leaflet-geocoder@3.1.4/dist/esri-leaflet-geocoder.css" />
+    
     <style>
         body { margin: 0; padding: 0; background: #121212; font-family: sans-serif; }
         #map { height: 100vh; width: 100%; }
@@ -30,19 +31,18 @@
         var map = L.map('map', { zoomControl: false }).setView([-15.7975, -47.8919], 15);
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
-        // Configuração dos Ícones
+        // Configuração dos Ícones com Links Reais
         var icones = {
             'onibus': L.icon({ iconUrl: 'https://cdn-icons-png.flaticon.com/512/2892/2892842.png', iconSize: [50, 50], iconAnchor: [25, 25] }),
-            'carro': L.icon({ iconUrl: 'https://cdn-icons-png.flaticon.com', iconSize: [45, 45], iconAnchor: [22, 22] }),
-            'moto': L.icon({ iconUrl: 'https://cdn-icons-png.flaticon.com', iconSize: [40, 40], iconAnchor: [20, 20] })
+            'carro': L.icon({ iconUrl: 'https://cdn-icons-png.flaticon.com/512/3082/3082349.png', iconSize: [45, 45], iconAnchor: [22, 22] }),
+            'moto': L.icon({ iconUrl: 'https://cdn-icons-png.flaticon.com/512/3448/3448650.png', iconSize: [40, 40], iconAnchor: [20, 20] })
         };
 
-        var socket = io(); // Conecta no servidor automaticamente
+        var socket = io(); 
         var markers = {};
         var geocodeService = L.esri.Geocoding.geocodeService();
 
         socket.on('frota_atualizada', (frota) => {
-            // 1. ATUALIZA OU CRIA MOTORISTAS
             Object.keys(frota).forEach(id => {
                 var info = frota[id];
                 var pos = [info.lat, info.lng];
@@ -56,11 +56,9 @@
                     markers[id].setIcon(icones[tipo] || icones['onibus']);
                 }
 
-                // Atualiza Painel
                 document.getElementById('status').innerText = "📍 " + tipo.toUpperCase() + " EM MOVIMENTO";
                 document.getElementById('nome').innerText = info.usuario.toUpperCase();
 
-                // Busca o endereço real
                 geocodeService.reverse().latlng(pos).run(function (error, result) {
                     if (!error && result.address) {
                         document.getElementById('endereco').innerText = result.address.Match_addr;
@@ -68,21 +66,16 @@
                 });
             });
 
-            // 2. LIMPA QUEM SAIU DA FROTA
             Object.keys(markers).forEach(id => {
                 if (!frota[id]) {
                     map.removeLayer(markers[id]);
                     delete markers[id];
-                    document.getElementById('status').innerText = "📍 AGUARDANDO SINAL...";
-                    document.getElementById('nome').innerText = "OFFLINE";
-                    document.getElementById('endereco').innerText = "Motorista se desconectou.";
                 }
             });
         });
 
         socket.on('disconnect', () => {
             document.getElementById('status').innerText = "🔴 SERVIDOR OFFLINE";
-            document.getElementById('nome').innerText = "RECONECTANDO...";
         });
     </script>
 </body>
