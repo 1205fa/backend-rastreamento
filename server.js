@@ -1,4 +1,4 @@
-const express = require('express'); // Faltava essa linha!
+const express = require('express');
 const http = require('http');
 const { Server } = require("socket.io");
 const cors = require('cors');
@@ -6,21 +6,23 @@ const cors = require('cors');
 const app = express();
 app.use(cors());
 
-// Rota para abrir o mapa
 app.get('/', (req, res) => res.sendFile(__dirname + '/mapa.html'));
 
 const server = http.createServer(app);
-const io = new Server(server, { 
-    cors: { origin: "*" } 
-});
+const io = new Server(server, { cors: { origin: "*" } });
 
 let frota = {}; 
+let totalPessoas = 0; // Variável nova para contar gente
 
 io.on('connection', (socket) => {
-    console.log('Dispositivo conectado:', socket.id);
+    // 1. Aumenta o contador quando alguém entra
+    totalPessoas++;
+    console.log('Alguém entrou! Total: ' + totalPessoas);
+    
+    // 2. Avisa todo mundo qual o novo número
+    io.emit('atualizar_contador', totalPessoas);
 
     socket.on('enviarLocalizacao', (dados) => {
-        // Salva na memória garantindo que pegue lat/lng de qualquer jeito
         frota[socket.id] = {
             id: socket.id,
             usuario: dados.usuario || "Motorista",
@@ -28,21 +30,22 @@ io.on('connection', (socket) => {
             lat: dados.latitude || dados.lat,
             lng: dados.longitude || dados.lng
         };
-        
-        // Avisa todos os mapas (passageiros)
         io.emit('frota_atualizada', frota);
     });
 
     socket.on('disconnect', () => {
+        // 3. Diminui o contador quando alguém sai
+        totalPessoas--;
         delete frota[socket.id];
+        
+        // 4. Avisa que saiu gente e atualiza o mapa
+        io.emit('atualizar_contador', totalPessoas);
         io.emit('frota_atualizada', frota);
-        console.log('Dispositivo desconectado');
+        console.log('Alguém saiu. Total: ' + totalPessoas);
     });
 });
 
-// Porta dinâmica para o Render ou 3000 local
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, '0.0.0.0', () => {
     console.log(`>>> Servidor VIP rodando na porta ${PORT}`);
 });
-

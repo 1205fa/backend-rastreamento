@@ -13,7 +13,8 @@
     <style>
         body { margin: 0; padding: 0; background: #121212; font-family: sans-serif; }
         #map { height: 100vh; width: 100%; }
-        /* Estilo da Caixinha Preta lá em cima */
+        
+        /* Caixa de Informação do Motorista */
         #info { 
             position: absolute; top: 15px; left: 50%; transform: translateX(-50%); 
             width: 90%; max-width: 450px; 
@@ -21,18 +22,23 @@
             padding: 15px; border-radius: 12px; z-index: 9999; text-align: center; 
             border: 2px solid #00ffcc; box-shadow: 0 4px 15px rgba(0,255,204,0.3); 
         }
-        /* Estilo do Ícone do Ônibus (Bolinha com Emoji) */
+
+        /* NOVO: Estilo do Contador de Pessoas */
+        #contador-box {
+            position: absolute; bottom: 20px; left: 20px;
+            background: rgba(0,0,0,0.8); color: #00ffcc;
+            padding: 10px 15px; border-radius: 30px;
+            font-weight: bold; font-size: 14px;
+            border: 1px solid #00ffcc; z-index: 9999;
+            box-shadow: 0 0 10px rgba(0,255,204,0.2);
+        }
+
+        /* Estilo da Bolinha do Emoji */
         .bus-icon-style {
-            background-color: #222;
-            border: 2px solid #00ffcc;
-            border-radius: 50%;
-            width: 40px !important;
-            height: 40px !important;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            box-shadow: 0 0 10px #00ffcc;
-            font-size: 20px;
+            background-color: #222; border: 2px solid #00ffcc; border-radius: 50%;
+            width: 40px !important; height: 40px !important;
+            display: flex; justify-content: center; align-items: center;
+            box-shadow: 0 0 10px #00ffcc; font-size: 20px;
         }
     </style>
 </head>
@@ -42,22 +48,30 @@
         <span id="endereco" style="color:#bbb; font-size:13px;">Localizando motorista...</span>
         <div id="nome" style="font-size:22px; color:#FFD700; font-weight:bold; margin-top:10px;">...</div>
     </div>
+
+    <div id="contador-box">👥 0 Online</div>
+
     <div id="map"></div>
+    
     <script>
         var map = L.map('map', { zoomControl: false }).setView([-15.7975, -47.8919], 15);
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
-        // AQUI ESTÁ A MÁGICA: Criamos o ícone usando código, sem baixar imagem
+        // Ícone de Emoji (Indestrutível)
         var iconOnibus = L.divIcon({
-            className: 'custom-icon', // Classe vazia para não bugar o Leaflet
-            html: "<div class='bus-icon-style'>🚌</div>", // O Emoji dentro da bolinha
-            iconSize: [42, 42],
-            iconAnchor: [21, 21]
+            className: 'custom-icon', 
+            html: "<div class='bus-icon-style'>🚌</div>", 
+            iconSize: [42, 42], iconAnchor: [21, 21]
         });
 
         var socket = io(); 
         var markers = {};
         var geocodeService = L.esri.Geocoding.geocodeService();
+
+        // LÓGICA DO CONTADOR
+        socket.on('atualizar_contador', (numero) => {
+            document.getElementById('contador-box').innerText = "👥 " + numero + " Online";
+        });
 
         socket.on('frota_atualizada', (frota) => {
             Object.keys(frota).forEach(id => {
@@ -65,13 +79,9 @@
                 var pos = [info.lat, info.lng];
 
                 if (!markers[id]) {
-                    // Se o ônibus acabou de chegar, cria ele e dá zoom
                     markers[id] = L.marker(pos, { icon: iconOnibus }).addTo(map);
                     map.flyTo(pos, 16);
-                } else {
-                    // Se o ônibus JÁ existe, só move ele (não cria outro)
-                    markers[id].setLatLng(pos);
-                }
+                } else { markers[id].setLatLng(pos); }
 
                 document.getElementById('status').innerText = "📍 ÔNIBUS EM MOVIMENTO";
                 document.getElementById('nome').innerText = info.usuario.toUpperCase();
@@ -82,13 +92,8 @@
                     }
                 });
             });
-            
-            // Remove ônibus que desconectaram (para não ficar fantasma no mapa)
             Object.keys(markers).forEach(id => {
-                if (!frota[id]) {
-                    map.removeLayer(markers[id]);
-                    delete markers[id];
-                }
+                if (!frota[id]) { map.removeLayer(markers[id]); delete markers[id]; }
             });
         });
     </script>
