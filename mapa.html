@@ -13,7 +13,27 @@
     <style>
         body { margin: 0; padding: 0; background: #121212; font-family: sans-serif; }
         #map { height: 100vh; width: 100%; }
-        #info { position: absolute; top: 15px; left: 50%; transform: translateX(-50%); width: 90%; max-width: 450px; background: rgba(0,0,0,0.9); color: white; padding: 15px; border-radius: 12px; z-index: 9999; text-align: center; border: 2px solid #00ffcc; box-shadow: 0 4px 15px rgba(0,255,204,0.3); }
+        /* Estilo da Caixinha Preta lá em cima */
+        #info { 
+            position: absolute; top: 15px; left: 50%; transform: translateX(-50%); 
+            width: 90%; max-width: 450px; 
+            background: rgba(0,0,0,0.9); color: white; 
+            padding: 15px; border-radius: 12px; z-index: 9999; text-align: center; 
+            border: 2px solid #00ffcc; box-shadow: 0 4px 15px rgba(0,255,204,0.3); 
+        }
+        /* Estilo do Ícone do Ônibus (Bolinha com Emoji) */
+        .bus-icon-style {
+            background-color: #222;
+            border: 2px solid #00ffcc;
+            border-radius: 50%;
+            width: 40px !important;
+            height: 40px !important;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            box-shadow: 0 0 10px #00ffcc;
+            font-size: 20px;
+        }
     </style>
 </head>
 <body>
@@ -27,10 +47,10 @@
         var map = L.map('map', { zoomControl: false }).setView([-15.7975, -47.8919], 15);
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
-        // ÍCONE INDESTRUTÍVEL (USA EMOJI, NÃO IMAGEM)
+        // AQUI ESTÁ A MÁGICA: Criamos o ícone usando código, sem baixar imagem
         var iconOnibus = L.divIcon({
-            className: 'custom-icon',
-            html: "<div style='background-color:#222; border: 2px solid #00ffcc; border-radius:50%; width:40px; height:40px; display:flex; justify-content:center; align-items:center; box-shadow: 0 0 10px #00ffcc;'><span style='font-size:20px;'>🚌</span></div>",
+            className: 'custom-icon', // Classe vazia para não bugar o Leaflet
+            html: "<div class='bus-icon-style'>🚌</div>", // O Emoji dentro da bolinha
             iconSize: [42, 42],
             iconAnchor: [21, 21]
         });
@@ -45,12 +65,14 @@
                 var pos = [info.lat, info.lng];
 
                 if (!markers[id]) {
+                    // Se o ônibus acabou de chegar, cria ele e dá zoom
                     markers[id] = L.marker(pos, { icon: iconOnibus }).addTo(map);
                     map.flyTo(pos, 16);
                 } else {
+                    // Se o ônibus JÁ existe, só move ele (não cria outro)
                     markers[id].setLatLng(pos);
                 }
-                
+
                 document.getElementById('status').innerText = "📍 ÔNIBUS EM MOVIMENTO";
                 document.getElementById('nome').innerText = info.usuario.toUpperCase();
                 
@@ -59,6 +81,14 @@
                         document.getElementById('endereco').innerText = result.address.Match_addr;
                     }
                 });
+            });
+            
+            // Remove ônibus que desconectaram (para não ficar fantasma no mapa)
+            Object.keys(markers).forEach(id => {
+                if (!frota[id]) {
+                    map.removeLayer(markers[id]);
+                    delete markers[id];
+                }
             });
         });
     </script>
