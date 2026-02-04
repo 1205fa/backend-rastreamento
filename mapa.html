@@ -1,100 +1,138 @@
 <!DOCTYPE html>
 <html lang="pt-br">
 <head>
-    <title>Monitoramento VIP</title>
+    <title>Rastreamento Uber-Style</title>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
-    <script src="https://unpkg.com/esri-leaflet@3.0.10/dist/esri-leaflet.js"></script>
-    <script src="https://unpkg.com/esri-leaflet-geocoder@3.1.4/dist/esri-leaflet-geocoder.js"></script>
-    <link rel="stylesheet" href="https://unpkg.com/esri-leaflet-geocoder@3.1.4/dist/esri-leaflet-geocoder.css" />
     <style>
         body { margin: 0; padding: 0; background: #121212; font-family: sans-serif; }
         #map { height: 100vh; width: 100%; }
-        
-        /* Caixa de Informação do Motorista */
-        #info { 
-            position: absolute; top: 15px; left: 50%; transform: translateX(-50%); 
-            width: 90%; max-width: 450px; 
-            background: rgba(0,0,0,0.9); color: white; 
-            padding: 15px; border-radius: 12px; z-index: 9999; text-align: center; 
-            border: 2px solid #00ffcc; box-shadow: 0 4px 15px rgba(0,255,204,0.3); 
+
+        /* Estilo da Caixa de Status (Topo) */
+        #info-box {
+            position: absolute; top: 15px; left: 50%; transform: translateX(-50%);
+            width: 90%; max-width: 400px;
+            background: rgba(0,0,0,0.9); color: white;
+            padding: 15px; border-radius: 30px; z-index: 9999; text-align: center;
+            border: 2px solid #00ffcc; box-shadow: 0 4px 15px rgba(0,255,204,0.3);
         }
 
-        /* NOVO: Estilo do Contador de Pessoas */
-        #contador-box {
+        /* Texto Grande do Tempo de Chegada */
+        #tempo-chegada {
+            font-size: 24px; font-weight: bold; color: #FFD700; display: block; margin-top: 5px;
+        }
+
+        /* Contador de Pessoas (Canto Inferior) */
+        #contador {
             position: absolute; bottom: 20px; left: 20px;
-            background: rgba(0,0,0,0.8); color: #00ffcc;
-            padding: 10px 15px; border-radius: 30px;
-            font-weight: bold; font-size: 14px;
-            border: 1px solid #00ffcc; z-index: 9999;
-            box-shadow: 0 0 10px rgba(0,255,204,0.2);
+            background: black; color: #00ffcc;
+            padding: 8px 15px; border-radius: 20px;
+            border: 1px solid #00ffcc; font-weight: bold; z-index: 9999;
         }
 
-        /* Estilo da Bolinha do Emoji */
-        .bus-icon-style {
-            background-color: #222; border: 2px solid #00ffcc; border-radius: 50%;
+        /* Ícone do Ônibus (Emoji) */
+        .bus-icon {
+            background: #222; border: 2px solid #00ffcc; border-radius: 50%;
             width: 40px !important; height: 40px !important;
             display: flex; justify-content: center; align-items: center;
-            box-shadow: 0 0 10px #00ffcc; font-size: 20px;
+            box-shadow: 0 0 15px #00ffcc; font-size: 20px;
+        }
+
+        /* Ícone do Passageiro (Bolinha Azul) */
+        .user-dot {
+            width: 20px; height: 20px; background-color: #4285F4;
+            border-radius: 50%; border: 3px solid white;
+            box-shadow: 0 0 10px rgba(0,0,0,0.5);
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0% { box-shadow: 0 0 0 0 rgba(66, 133, 244, 0.7); }
+            70% { box-shadow: 0 0 0 15px rgba(66, 133, 244, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(66, 133, 244, 0); }
         }
     </style>
 </head>
 <body>
-    <div id="info">
-        <span id="status" style="color:#00ffcc; font-weight:bold; font-size:18px;">📍 AGUARDANDO SINAL...</span><br>
-        <span id="endereco" style="color:#bbb; font-size:13px;">Localizando motorista...</span>
-        <div id="nome" style="font-size:22px; color:#FFD700; font-weight:bold; margin-top:10px;">...</div>
+
+    <div id="info-box">
+        <span id="status-texto" style="font-size:14px; color:#bbb;">AGUARDANDO MOTORISTA...</span>
+        <span id="tempo-chegada">-- min</span>
     </div>
 
-    <div id="contador-box">👥 0 Online</div>
-
+    <div id="contador">👥 0 Online</div>
     <div id="map"></div>
-    
+
     <script>
-        var map = L.map('map', { zoomControl: false }).setView([-15.7975, -47.8919], 15);
+        var map = L.map('map', { zoomControl: false }).setView([-15.7975, -47.8919], 13);
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
-        // Ícone de Emoji (Indestrutível)
-        var iconOnibus = L.divIcon({
-            className: 'custom-icon', 
-            html: "<div class='bus-icon-style'>🚌</div>", 
-            iconSize: [42, 42], iconAnchor: [21, 21]
-        });
-
-        var socket = io(); 
+        var socket = io();
         var markers = {};
-        var geocodeService = L.esri.Geocoding.geocodeService();
+        var passageiroLat = null;
+        var passageiroLng = null;
+        var passageiroMarker = null;
 
-        // LÓGICA DO CONTADOR
-        socket.on('atualizar_contador', (numero) => {
-            document.getElementById('contador-box').innerText = "👥 " + numero + " Online";
+        // 1. LOCALIZAR O PASSAGEIRO (GPS do Navegador)
+        map.locate({watch: true, enableHighAccuracy: true});
+
+        map.on('locationfound', function(e) {
+            passageiroLat = e.latitude;
+            passageiroLng = e.longitude;
+
+            if (!passageiroMarker) {
+                var iconPassageiro = L.divIcon({className: 'custom-div-icon', html: "<div class='user-dot'></div>", iconSize: [20, 20], iconAnchor: [10, 10]});
+                passageiroMarker = L.marker([passageiroLat, passageiroLng], {icon: iconPassageiro}).addTo(map);
+                map.setView([passageiroLat, passageiroLng], 15); // Zoom no passageiro
+            } else {
+                passageiroMarker.setLatLng([passageiroLat, passageiroLng]);
+            }
         });
+
+        // 2. RECEBER DADOS DO ÔNIBUS
+        var iconOnibus = L.divIcon({className: '', html: "<div class='bus-icon'>🚌</div>", iconSize: [42, 42], iconAnchor: [21, 21]});
+
+        socket.on('atualizar_contador', (n) => { document.getElementById('contador').innerText = "👥 " + n + " Online"; });
 
         socket.on('frota_atualizada', (frota) => {
+            var encontrouAlguem = false;
+
             Object.keys(frota).forEach(id => {
                 var info = frota[id];
-                var pos = [info.lat, info.lng];
+                var posOnibus = [info.lat, info.lng];
+                encontrouAlguem = true;
 
+                // Desenha ou move o ônibus
                 if (!markers[id]) {
-                    markers[id] = L.marker(pos, { icon: iconOnibus }).addTo(map);
-                    map.flyTo(pos, 16);
-                } else { markers[id].setLatLng(pos); }
+                    markers[id] = L.marker(posOnibus, { icon: iconOnibus }).addTo(map);
+                    markers[id].bindTooltip(info.usuario.toUpperCase(), {permanent: true, direction: "top", offset: [0, -25], className: "tooltip-style"});
+                } else {
+                    markers[id].setLatLng(posOnibus);
+                }
 
-                document.getElementById('status').innerText = "📍 ÔNIBUS EM MOVIMENTO";
-                document.getElementById('nome').innerText = info.usuario.toUpperCase();
-                
-                geocodeService.reverse().latlng(pos).run(function (error, result) {
-                    if (!error && result.address) {
-                        document.getElementById('endereco').innerText = result.address.Match_addr;
-                    }
-                });
+                // 3. CALCULAR DISTÂNCIA E TEMPO (Igual Uber)
+                if (passageiroLat && passageiroLng) {
+                    var distMetros = map.distance([passageiroLat, passageiroLng], posOnibus);
+                    var distKm = (distMetros / 1000).toFixed(1);
+                    
+                    // Estimativa: Ônibus a 40km/h (aprox 666 metros por minuto)
+                    var tempoMinutos = Math.ceil(distMetros / 500); 
+
+                    document.getElementById('status-texto').innerText = "MOTORISTA " + info.usuario.toUpperCase() + " A CAMINHO";
+                    document.getElementById('tempo-chegada').innerText = tempoMinutos + " min (" + distKm + "km)";
+                    document.getElementById('tempo-chegada').style.color = "#00ffcc";
+                } else {
+                    document.getElementById('status-texto').innerText = "MOTORISTA " + info.usuario.toUpperCase() + " NO MAPA";
+                    document.getElementById('tempo-chegada').innerText = "Calculando rota...";
+                }
             });
-            Object.keys(markers).forEach(id => {
-                if (!frota[id]) { map.removeLayer(markers[id]); delete markers[id]; }
-            });
+
+            if (!encontrouAlguem) {
+                document.getElementById('status-texto').innerText = "AGUARDANDO SINAL...";
+                document.getElementById('tempo-chegada').innerText = "-- min";
+            }
         });
     </script>
 </body>
