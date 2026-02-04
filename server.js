@@ -8,10 +8,8 @@ app.get('/', (req, res) => res.sendFile(__dirname + '/mapa.html'));
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: "*" } });
 let frota = {}; 
-
 io.on('connection', (socket) => {
     socket.on('enviarLocalizacao', (dados) => {
-        // Aqui salvamos de dois jeitos para não ter erro
         frota[socket.id] = {
             id: socket.id,
             usuario: dados.usuario || "Motorista",
