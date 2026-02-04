@@ -28,11 +28,18 @@ io.on('connection', (socket) => {
         io.emit('frota_atualizada', frota);
     });
 
-    socket.on('disconnect', () => {
-        delete frota[socket.id];
-        io.emit('frota_atualizada', frota);
-        console.log('Offline:', socket.id);
-    });
+    socket.on('enviarLocalizacao', (dados) => {
+    // Console log para você ver o que está chegando no terminal do Render
+    console.log(`Motorista ${dados.usuario} em: ${dados.latitude}, ${dados.longitude}`);
+
+    frota[socket.id] = {
+        id: socket.id,
+        usuario: dados.usuario || "Motorista",
+        veiculo: dados.veiculo || "onibus",
+        lat: dados.latitude,  // Agora bate com o mapa.html
+        lng: dados.longitude  // Agora bate com o mapa.html
+    };
+    io.emit('frota_atualizada', frota);
 });
 
 const PORT = process.env.PORT || 3000;

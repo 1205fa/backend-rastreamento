@@ -4,16 +4,18 @@
     <title>Monitoramento VIP</title>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
     <script src="https://unpkg.com/esri-leaflet@3.0.10/dist/esri-leaflet.js"></script>
     <script src="https://unpkg.com/esri-leaflet-geocoder@3.1.4/dist/esri-leaflet-geocoder.js"></script>
     <link rel="stylesheet" href="https://unpkg.com/esri-leaflet-geocoder@3.1.4/dist/esri-leaflet-geocoder.css" />
+
     <style>
         body { margin: 0; padding: 0; font-family: 'Arial', sans-serif; background: #121212; }
         #map { height: 100vh; width: 100%; }
-        #info-box { position: absolute; top: 20px; left: 50%; transform: translateX(-50%); width: 90%; max-width: 450px; background: rgba(0, 0, 0, 0.95); color: white; padding: 15px; border-radius: 15px; z-index: 9999; text-align: center; border: 2px solid #00ffcc; box-shadow: 0 10px 30px rgba(0,0,0,0.8); }
+        #info-box { position: absolute; top: 20px; left: 50%; transform: translateX(-50%); width: 90%; max-width: 450px; background: rgba(0, 0, 0, 0.9); color: white; padding: 15px; border-radius: 15px; z-index: 9999; text-align: center; border: 2px solid #00ffcc; box-shadow: 0 10px 30px rgba(0,0,0,0.8); }
         .tempo { font-size: 18px; font-weight: bold; color: #00ffcc; display: block; }
         .endereco { font-size: 13px; color: #ccc; margin: 5px 0; display: block; height: 16px; overflow: hidden; }
         .veiculo-nome { font-size: 20px; color: #FFD700; font-weight: 900; text-transform: uppercase; border-top: 1px solid #333; padding-top: 8px; margin-top: 8px; }
@@ -28,51 +30,69 @@
         <div id="nome-motorista" class="veiculo-nome">AGUARDANDO...</div>
     </div>
     <div id="map"></div>
+
     <script>
         var map = L.map('map', { zoomControl: false }).setView([-15.7975, -47.8919], 15);
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
+        // 1. LOCALIZAÇÃO DO PASSAGEIRO (BOLINHA AZUL)
+        map.locate({watch: true, enableHighAccuracy: true});
+        var markerPassageiro;
+        map.on('locationfound', function(e) {
+            if (!markerPassageiro) {
+                markerPassageiro = L.circleMarker(e.latlng, { radius: 10, fillColor: "#2F80ED", color: "#fff", weight: 3, fillOpacity: 0.8 }).addTo(map);
+            } else {
+                markerPassageiro.setLatLng(e.latlng);
+            }
+        });
+
+        // 2. ÍCONES DOS VEÍCULOS
         var icones = {
             'carro': L.icon({ iconUrl: 'https://cdn-icons-png.flaticon.com/512/3082/3082349.png', iconSize: [45, 45], iconAnchor: [22, 22] }),
             'moto': L.icon({ iconUrl: 'https://cdn-icons-png.flaticon.com/512/3448/3448650.png', iconSize: [40, 40], iconAnchor: [20, 20] }),
             'onibus': L.icon({ iconUrl: 'https://cdn-icons-png.flaticon.com/512/2892/2892842.png', iconSize: [50, 50], iconAnchor: [25, 25] })
         };
 
+        // 3. CONEXÃO COM O SERVIDOR
         var socket = io('https://backend-rastreamento-1.onrender.com');
-        var markers = {}; var pulses = {}; var markerPassageiro;
-
-        map.locate({watch: true, enableHighAccuracy: true});
-        map.on('locationfound', function(e) {
-            if (!markerPassageiro) {
-                markerPassageiro = L.circleMarker(e.latlng, { radius: 10, fillColor: "#2F80ED", color: "#fff", weight: 3, fillOpacity: 0.8 }).addTo(map);
-            } else { markerPassageiro.setLatLng(e.latlng); }
-        });
+        var markers = {}; 
+        var pulses = {}; 
+        var geocodeService = L.esri.Geocoding.geocodeService();
 
         socket.on('frota_atualizada', (frota) => {
             Object.keys(frota).forEach(id => {
                 var info = frota[id];
                 var pos = [info.lat, info.lng];
-                var tipo = info.veiculo || 'onibus';
+                var tipo = info.veiculo || 'onibus'; // Pega o tipo enviado pelo App
                 
                 if (!markers[id]) {
+                    // Cria o ícone e o efeito de pulso
                     markers[id] = L.marker(pos, { icon: icones[tipo] }).addTo(map);
                     pulses[id] = L.marker(pos, { icon: L.divIcon({ className: 'pulse-container', iconSize: [20, 20] }) }).addTo(map);
                 } else {
-                    markers[id].setLatLng(pos); pulses[id].setLatLng(pos);
+                    markers[id].setLatLng(pos);
+                    pulses[id].setLatLng(pos);
                     markers[id].setIcon(icones[tipo]);
                 }
 
                 document.getElementById('nome-motorista').innerText = (info.usuario || "Motorista").toUpperCase();
                 document.getElementById('tempo-chegada').innerText = "📍 " + tipo.toUpperCase() + " EM MOVIMENTO";
 
-                var geocodeService = L.esri.Geocoding.geocodeService();
                 geocodeService.reverse().latlng(pos).run(function (error, result) {
-                    if (!error && result.address) { document.getElementById('distancia-chegada').innerText = result.address.Match_addr; }
+                    if (!error && result.address) {
+                        document.getElementById('distancia-chegada').innerText = result.address.Match_addr;
+                    }
                 });
             });
 
+            // Remove quem desconectar
             Object.keys(markers).forEach(id => {
-                if (!frota[id]) { map.removeLayer(markers[id]); map.removeLayer(pulses[id]); delete markers[id]; delete pulses[id]; }
+                if (!frota[id]) {
+                    map.removeLayer(markers[id]);
+                    map.removeLayer(pulses[id]);
+                    delete markers[id];
+                    delete pulses[id];
+                }
             });
         });
     </script>
