@@ -6,7 +6,7 @@ const cors = require('cors');
 const app = express();
 app.use(cors());
 
-// Rota principal serve o mapa
+// Serve o mapa na rota principal
 app.get('/', (req, res) => res.sendFile(__dirname + '/mapa.html'));
 
 const server = http.createServer(app);
@@ -15,9 +15,12 @@ const io = new Server(server, { cors: { origin: "*" } });
 let frota = {}; 
 
 io.on('connection', (socket) => {
-    console.log('Conectado:', socket.id);
+    console.log('Cliente conectado:', socket.id);
 
+    // ESCUTA O MOTORISTA
     socket.on('enviarLocalizacao', (dados) => {
+        console.log(`Dados recebidos de ${dados.usuario}:`, dados);
+        
         frota[socket.id] = {
             id: socket.id,
             usuario: dados.usuario || "Motorista",
@@ -25,22 +28,19 @@ io.on('connection', (socket) => {
             lat: dados.latitude,
             lng: dados.longitude
         };
+
+        // Grita para o mapa.html atualizar
         io.emit('frota_atualizada', frota);
     });
 
-    socket.on('enviarLocalizacao', (dados) => {
-    // Console log para você ver o que está chegando no terminal do Render
-    console.log(`Motorista ${dados.usuario} em: ${dados.latitude}, ${dados.longitude}`);
-
-    frota[socket.id] = {
-        id: socket.id,
-        usuario: dados.usuario || "Motorista",
-        veiculo: dados.veiculo || "onibus",
-        lat: dados.latitude,  // Agora bate com o mapa.html
-        lng: dados.longitude  // Agora bate com o mapa.html
-    };
-    io.emit('frota_atualizada', frota);
+    socket.on('disconnect', () => {
+        delete frota[socket.id];
+        io.emit('frota_atualizada', frota);
+        console.log('Cliente desconectado:', socket.id);
+    });
 });
 
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, '0.0.0.0', () => console.log(`Sistema rodando na porta ${PORT}`));
+server.listen(PORT, '0.0.0.0', () => {
+    console.log(`Servidor rodando na porta ${PORT}`);
+});
