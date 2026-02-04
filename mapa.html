@@ -13,32 +13,29 @@
     <style>
         body { margin: 0; padding: 0; background: #121212; font-family: sans-serif; }
         #map { height: 100vh; width: 100%; }
-        #info { position: absolute; top: 15px; left: 50%; transform: translateX(-50%); width: 90%; max-width: 450px; background: rgba(0,0,0,0.95); color: white; padding: 15px; border-radius: 12px; z-index: 9999; text-align: center; border: 2px solid #00ffcc; }
+        #info { position: absolute; top: 15px; left: 50%; transform: translateX(-50%); width: 90%; max-width: 450px; background: rgba(0,0,0,0.9); color: white; padding: 15px; border-radius: 12px; z-index: 9999; text-align: center; border: 2px solid #00ffcc; box-shadow: 0 4px 15px rgba(0,255,204,0.3); }
     </style>
 </head>
 <body>
     <div id="info">
-        <span id="status" style="color:#00ffcc; font-weight:bold;">📍 AGUARDANDO MOTORISTA...</span><br>
-        <span id="endereco" style="color:#bbb; font-size:12px;">Localizando...</span>
+        <span id="status" style="color:#00ffcc; font-weight:bold; font-size:18px;">📍 AGUARDANDO SINAL...</span><br>
+        <span id="endereco" style="color:#bbb; font-size:13px;">Localizando motorista...</span>
         <div id="nome" style="font-size:22px; color:#FFD700; font-weight:bold; margin-top:10px;">...</div>
     </div>
     <div id="map"></div>
     <script>
         var map = L.map('map', { zoomControl: false }).setView([-15.7975, -47.8919], 15);
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
-        var iconOnibus = L.icon({ iconUrl: 'https://cdn-icons-png.flaticon.com/512/2892/2892842.png', iconSize: [50, 50], iconAnchor: [25, 25] });
+
+        var iconOnibus = L.icon({ 
+            iconUrl: 'https://cdn-icons-png.flaticon.com/512/2892/2892842.png', 
+            iconSize: [50, 50], 
+            iconAnchor: [25, 25] 
+        });
+
         var socket = io(); 
         var markers = {};
-        var markerPassageiro;
         var geocodeService = L.esri.Geocoding.geocodeService();
-
-        // Localização do Passageiro (Ponto Azul)
-        map.locate({watch: true, enableHighAccuracy: true});
-        map.on('locationfound', function(e) {
-            if (!markerPassageiro) {
-                markerPassageiro = L.circleMarker(e.latlng, {radius: 8, fillColor: "#2F80ED", color: "#fff", weight: 2, fillOpacity: 1}).addTo(map);
-            } else { markerPassageiro.setLatLng(e.latlng); }
-        });
 
         socket.on('frota_atualizada', (frota) => {
             Object.keys(frota).forEach(id => {
@@ -47,11 +44,15 @@
                 if (!markers[id]) {
                     markers[id] = L.marker(pos, { icon: iconOnibus }).addTo(map);
                     map.flyTo(pos, 16);
-                } else { markers[id].setLatLng(pos); }
+                } else {
+                    markers[id].setLatLng(pos);
+                }
                 document.getElementById('status').innerText = "📍 ÔNIBUS EM MOVIMENTO";
                 document.getElementById('nome').innerText = info.usuario.toUpperCase();
                 geocodeService.reverse().latlng(pos).run(function (error, result) {
-                    if (!error && result.address) { document.getElementById('endereco').innerText = result.address.Match_addr; }
+                    if (!error && result.address) {
+                        document.getElementById('endereco').innerText = result.address.Match_addr;
+                    }
                 });
             });
         });
