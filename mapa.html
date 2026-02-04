@@ -13,25 +13,19 @@
     <style>
         body { margin: 0; padding: 0; background: #121212; font-family: sans-serif; }
         #map { height: 100vh; width: 100%; }
-        #info { position: absolute; top: 15px; left: 50%; transform: translateX(-50%); width: 90%; max-width: 450px; background: rgba(0,0,0,0.9); color: white; padding: 15px; border-radius: 12px; z-index: 9999; text-align: center; border: 2px solid #00ffcc; box-shadow: 0 4px 15px rgba(0,255,204,0.3); }
+        #info { position: absolute; top: 15px; left: 50%; transform: translateX(-50%); width: 90%; max-width: 450px; background: rgba(0,0,0,0.95); color: white; padding: 15px; border-radius: 12px; z-index: 9999; text-align: center; border: 2px solid #ff0000; box-shadow: 0 0 20px rgba(255,0,0,0.4); }
     </style>
 </head>
 <body>
     <div id="info">
-        <span id="status" style="color:#00ffcc; font-weight:bold; font-size:18px;">📍 AGUARDANDO SINAL...</span><br>
+        <span id="status" style="color:#ff0000; font-weight:bold; font-size:18px;">📍 AGUARDANDO SINAL...</span><br>
         <span id="endereco" style="color:#bbb; font-size:13px;">Localizando motorista...</span>
-        <div id="nome" style="font-size:22px; color:#FFD700; font-weight:bold; margin-top:10px;">...</div>
+        <div id="nome" style="font-size:22px; color:#fff; font-weight:bold; margin-top:10px;">...</div>
     </div>
     <div id="map"></div>
     <script>
         var map = L.map('map', { zoomControl: false }).setView([-15.7975, -47.8919], 15);
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
-        
-        var iconOnibus = L.icon({ 
-            iconUrl: 'https://cdn-icons-png.flaticon.com/512/2892/2892842.png', 
-            iconSize: [50, 50], 
-            iconAnchor: [25, 25] 
-        });
 
         var socket = io(); 
         var markers = {};
@@ -41,14 +35,25 @@
             Object.keys(frota).forEach(id => {
                 var info = frota[id];
                 var pos = [info.lat, info.lng];
+
                 if (!markers[id]) {
-                    markers[id] = L.marker(pos, { icon: iconOnibus }).addTo(map);
+                    // DESENHA UMA BOLA VERMELHA GIGANTE EM VEZ DE IMAGEM
+                    markers[id] = L.circleMarker(pos, {
+                        radius: 20,
+                        fillColor: "#ff0000",
+                        color: "#fff",
+                        weight: 3,
+                        opacity: 1,
+                        fillOpacity: 0.8
+                    }).addTo(map);
                     map.flyTo(pos, 16);
                 } else {
                     markers[id].setLatLng(pos);
                 }
-                document.getElementById('status').innerText = "📍 ÔNIBUS EM MOVIMENTO";
+
+                document.getElementById('status').innerText = "🚨 MOTORISTA LOCALIZADO";
                 document.getElementById('nome').innerText = info.usuario.toUpperCase();
+                
                 geocodeService.reverse().latlng(pos).run(function (error, result) {
                     if (!error && result.address) {
                         document.getElementById('endereco').innerText = result.address.Match_addr;
